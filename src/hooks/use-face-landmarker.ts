@@ -7,7 +7,7 @@ import {
   DrawingUtils,
   type NormalizedLandmark,
 } from "@mediapipe/tasks-vision"
-import { LIP_LANDMARK_INDICES } from "@/lib/lip-processor"
+import { ALL_LIP_INDICES } from "@/lib/lip-processor"
 
 export type LandmarkerState = "loading" | "ready" | "error"
 
@@ -57,6 +57,7 @@ export const useFaceLandmarker = (
 ) => {
   const landmarkerRef = useRef<FaceLandmarker | null>(null)
   const rafRef = useRef<number>(0)
+  const faceLandmarksRef = useRef<NormalizedLandmark[] | null>(null)
   const [state, setState] = useState<LandmarkerState>("loading")
   const [error, setError] = useState<string | null>(null)
   const [faceDetected, setFaceDetected] = useState(false)
@@ -138,6 +139,8 @@ export const useFaceLandmarker = (
           lastDetected = detected
         }
 
+        faceLandmarksRef.current = result.faceLandmarks?.[0] ?? null
+
         if (result.faceLandmarks) {
           for (const face of result.faceLandmarks) {
             drawingUtils.drawConnectors(
@@ -166,7 +169,7 @@ export const useFaceLandmarker = (
     return () => cancelAnimationFrame(rafRef.current)
   }, [isActive, state, videoRef, canvasRef])
 
-  return { state, error, faceDetected }
+  return { state, error, faceDetected, faceLandmarksRef }
 }
 
 const drawLipBoundingBox = (
@@ -175,7 +178,7 @@ const drawLipBoundingBox = (
   width: number,
   height: number,
 ) => {
-  const lipLandmarks = LIP_LANDMARK_INDICES.map((i) => face[i]).filter(Boolean)
+  const lipLandmarks = ALL_LIP_INDICES.map((i) => face[i]).filter(Boolean)
   if (lipLandmarks.length === 0) return
 
   const xs = lipLandmarks.map((l) => l.x)

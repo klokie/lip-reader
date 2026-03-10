@@ -3,10 +3,12 @@
 import { useRef } from "react"
 import { useCamera } from "@/hooks/use-camera"
 import { useFaceLandmarker } from "@/hooks/use-face-landmarker"
+import { useLipReader } from "@/hooks/use-lip-reader"
 import { CameraView } from "@/components/camera-view"
 import { StatusBar } from "@/components/status-bar"
 import { Controls } from "@/components/controls"
 import { ResultsDisplay } from "@/components/results-display"
+import { MODEL_FRAME_COUNT } from "@/lib/lip-processor"
 
 export default function Home() {
   const {
@@ -23,7 +25,16 @@ export default function Home() {
     state: landmarkerState,
     error: landmarkerError,
     faceDetected,
+    faceLandmarksRef,
   } = useFaceLandmarker(videoRef, canvasRef, cameraState === "active")
+
+  const {
+    modelState,
+    modelError,
+    result,
+    isInferring,
+    frameCount,
+  } = useLipReader(videoRef, faceLandmarksRef, cameraState === "active", faceDetected)
 
   return (
     <main className="flex h-dvh flex-col items-center gap-3 px-3 py-3 sm:px-4 sm:py-4">
@@ -46,13 +57,13 @@ export default function Home() {
       <StatusBar
         camera={cameraState}
         landmarker={landmarkerState}
-        model="not-loaded"
+        model={modelState}
         faceDetected={faceDetected}
       />
 
-      {(cameraError || landmarkerError) && (
+      {(cameraError || landmarkerError || modelError) && (
         <p className="max-w-md text-center text-sm text-red-400">
-          {cameraError || landmarkerError}
+          {cameraError || landmarkerError || modelError}
         </p>
       )}
 
@@ -63,7 +74,13 @@ export default function Home() {
         isLoading={cameraState === "requesting"}
       />
 
-      <ResultsDisplay text="" />
+      <ResultsDisplay
+        text={result?.text ?? ""}
+        isInferring={isInferring}
+        latencyMs={result?.latencyMs}
+        frameCount={frameCount}
+        totalFrames={MODEL_FRAME_COUNT}
+      />
     </main>
   )
 }

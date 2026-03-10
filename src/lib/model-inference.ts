@@ -1,45 +1,104 @@
+import { MODEL_FRAME_COUNT, MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT } from "./lip-processor"
+import { ctcGreedyDecode } from "./ctc-decoder"
+
 export type ModelState = "not-loaded" | "loading" | "ready" | "error"
 
 export type InferenceResult = {
   text: string
   confidence: number
+  latencyMs: number
 }
+
+const NUM_CLASSES = 28
+const CHANNELS = 3
 
 export type ModelInference = {
   state: ModelState
-  load: (modelUrl: string) => Promise<void>
+  load: () => Promise<void>
   infer: (
-    frames: Float32Array,
-    landmarks: Float32Array,
+    videoTensor: Float32Array,
+    coordsTensor: Float32Array,
   ) => Promise<InferenceResult>
   dispose: () => void
 }
 
-/**
- * Stub implementation — replace with ONNX Runtime Web inference
- * once LipCoordNet has been converted to ONNX format.
- *
- * Expected model input:
- *   video:     Float32[1, 1, 75, 64, 128]  (grayscale frames)
- *   landmarks: Float32[1, 75, 40, 2]       (lip landmark coords)
- *
- * Expected output:
- *   probabilities: Float32[1, 75, 28]  (CTC output — 27 chars + blank)
- */
-export const createModelInference = (): ModelInference => ({
-  state: "not-loaded" as ModelState,
+export const createModelInference = (): ModelInference => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let session: any = null
+  let ort: typeof import("onnxruntime-web") | null = null
+  const state: { current: ModelState } = { current: "not-loaded" }
 
-  load: async (_modelUrl: string) => {
-    // const ort = await import("onnxruntime-web")
-    // const session = await ort.InferenceSession.create(modelUrl)
-  },
+  return {
+    get state() {
+      return state.current
+    },
 
-  infer: async (
-    _frames: Float32Array,
-    _landmarks: Float32Array,
-  ): Promise<InferenceResult> => {
-    return { text: "", confidence: 0 }
-  },
+    load: async () => {
+      if (state.current === "ready" || state.current === "loading") return
+      state.current = "loading"
 
-  dispose: () => {},
-})
+      ort = await import("onnxruntime-web")
+      ort.env.wasm.numThreads = 1
+      ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/"
+
+      session = await ort.InferenceSession.create("/models/lipcoordnet_int8.onnx", {
+        executionProviders: ["wasm"],
+        graphOptimizationLevel: "all",
+      })
+      state.current = "ready"
+    },
+
+    infer: async (
+      videoTensor: Float32Array,
+      coordsTensor: Float32Array,
+    ): Promise<InferenceResult> => {
+      if (!session || !ort) {
+        throw new Error("Model not loaded")
+      }
+
+      const start = performance.now()
+
+      const videoInput = new ort.Tensor(
+        "float32",
+        videoTensor,
+        [1, CHANNELS, MODEL_FRAME_COUNT, MODEL_INPUT_HEIGHT, MODEL_INPUT_WIDTH],
+      )
+
+      const coordsInput = new ort.Tensor(
+        "float32",
+        coordsTensor,
+        [1, MODEL_FRAME_COUNT, 20, 2],
+      )
+
+      const results = await session.run({
+        video: videoInput,
+        coords: coordsInput,
+      })
+
+      const latencyMs = performance.now() - start
+      const output = results.output.data as Float32Array
+
+      const text = ctcGreedyDecode(output, MODEL_FRAME_COUNT, NUM_CLASSES)
+
+      let totalMax = 0
+      for (let t = 0; t < MODEL_FRAME_COUNT; t++) {
+        const offset = t * NUM_CLASSES
+        let maxVal = output[offset]
+        for (let c = 1; c < NUM_CLASSES; c++) {
+          if (output[offset + c] > maxVal) maxVal = output[offset + c]
+        }
+        totalMax += maxVal
+      }
+      const confidence = totalMax / MODEL_FRAME_COUNT
+
+      return { text, confidence, latencyMs }
+    },
+
+    dispose: () => {
+      session?.release()
+      session = null
+      ort = null
+      state.current = "not-loaded"
+    },
+  }
+}

@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# model files (too large for git, regenerate with scripts/convert_to_onnx.py)
+/public/models/*.onnx
+/scripts/lipcoordnet_weights.pt

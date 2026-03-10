@@ -49,6 +49,7 @@ npm run build
 Output directory: `out/`
 
 Cloudflare Pages config:
+
 - **Build command:** `npm run build`
 - **Output directory:** `out`
 
