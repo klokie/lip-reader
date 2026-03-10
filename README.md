@@ -1,36 +1,94 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Lip Reader
+
+Real-time lip reading in the browser using machine learning. No server required — all inference runs client-side via WebAssembly.
+
+![License](https://img.shields.io/badge/license-MIT-blue)
+
+## How It Works
+
+```
+Camera → MediaPipe Face Landmarker → Lip ROI + Landmarks → LipCoordNet (ONNX) → CTC Decode → Text
+```
+
+1. **Camera** captures video via `getUserMedia`
+2. **MediaPipe Face Landmarker** detects 468 face landmarks in real-time, extracts lip region
+3. **LipCoordNet** (ONNX model via WebAssembly) reads lip movements from cropped frames + landmark coordinates
+4. **CTC decoder** converts model output probabilities to text
+
+Currently implemented: steps 1-2 (camera + face/lip detection). Model inference is stubbed pending ONNX conversion of [LipCoordNet](https://huggingface.co/SilentSpeak/LipCoordNet).
+
+## Demo
+
+Start the camera and the app detects your face in real-time, highlighting lip landmarks with a cyan overlay and dashed bounding box around the lip region.
+
+## Stack
+
+- **Framework:** Next.js 16 + TypeScript + Tailwind v4
+- **Face Detection:** [MediaPipe Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/web_js) (468 landmarks, 30-60fps)
+- **ML Runtime:** [ONNX Runtime Web](https://onnxruntime.ai/docs/tutorials/web/) (WASM/WebGPU)
+- **Target Model:** [SilentSpeak/LipCoordNet](https://huggingface.co/SilentSpeak/LipCoordNet) (1.7% WER, 0.6% CER)
+- **Deploy:** Cloudflare Pages (static export)
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) and grant camera access.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Build & Deploy
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Static export for Cloudflare Pages:
 
-## Learn More
+```bash
+npm run build
+```
 
-To learn more about Next.js, take a look at the following resources:
+Output directory: `out/`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Cloudflare Pages config:
+- **Build command:** `npm run build`
+- **Output directory:** `out`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The `public/_headers` file configures `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` for WASM threading support.
 
-## Deploy on Vercel
+## Project Structure
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+src/
+├── app/
+│   ├── globals.css              # Dark theme, animations
+│   ├── layout.tsx               # Metadata + fonts
+│   └── page.tsx                 # Main composition
+├── components/
+│   ├── camera-view.tsx          # Video + canvas overlay
+│   ├── controls.tsx             # Start/stop
+│   ├── status-bar.tsx           # System status indicators
+│   └── results-display.tsx      # Recognized text output
+├── hooks/
+│   ├── use-camera.ts            # getUserMedia management
+│   └── use-face-landmarker.ts   # MediaPipe init + detection loop
+└── lib/
+    ├── lip-processor.ts         # Lip ROI extraction + grayscale
+    └── model-inference.ts       # ONNX inference stub
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Roadmap
+
+- [x] Camera access + live video feed
+- [x] Real-time face landmark detection (MediaPipe)
+- [x] Lip region highlighting + bounding box
+- [x] Status indicators (Camera, MediaPipe, Face, Model)
+- [x] Cloudflare Pages static export config
+- [ ] Convert LipCoordNet from PyTorch to ONNX
+- [ ] Quantize model (int8) for browser delivery
+- [ ] Wire ONNX Runtime Web inference
+- [ ] CTC decoder for output → text
+- [ ] Frame buffering pipeline (75 frames @ 25fps)
+- [ ] Real-time end-to-end lip reading
+
+## License
+
+MIT

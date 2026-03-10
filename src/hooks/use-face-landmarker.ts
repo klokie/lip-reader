@@ -11,6 +11,45 @@ import { LIP_LANDMARK_INDICES } from "@/lib/lip-processor"
 
 export type LandmarkerState = "loading" | "ready" | "error"
 
+const mediaPipeNoise = /XNNPACK|TensorFlow Lite|Feedback manager|acceleration to xnnpack/i
+
+const patchConsoleForMediaPipe = () => {
+  const originalError = console.error
+  const originalWarn = console.warn
+  const filter =
+    (original: (...args: unknown[]) => void) =>
+    (...args: unknown[]) => {
+      if (mediaPipeNoise.test(String(args[0] ?? ""))) return
+      original.apply(console, args)
+    }
+  console.error = filter(originalError)
+  console.warn = filter(originalWarn)
+}
+
+let landmarkerPromise: Promise<FaceLandmarker> | null = null
+
+const initLandmarker = (): Promise<FaceLandmarker> => {
+  if (!landmarkerPromise) {
+    landmarkerPromise = (async () => {
+      patchConsoleForMediaPipe()
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm",
+      )
+      return FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath:
+            "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+        },
+        runningMode: "VIDEO",
+        numFaces: 1,
+        outputFacialTransformationMatrixes: false,
+        outputFaceBlendshapes: false,
+      })
+    })()
+  }
+  return landmarkerPromise
+}
+
 export const useFaceLandmarker = (
   videoRef: RefObject<HTMLVideoElement | null>,
   canvasRef: RefObject<HTMLCanvasElement | null>,
@@ -23,29 +62,17 @@ export const useFaceLandmarker = (
   const [faceDetected, setFaceDetected] = useState(false)
 
   useEffect(() => {
-    let cancelled = false
+    let active = true
 
-    const init = async () => {
-      try {
-        const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm",
-        )
-        const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-          },
-          runningMode: "VIDEO",
-          numFaces: 1,
-          outputFacialTransformationMatrixes: false,
-          outputFaceBlendshapes: false,
-        })
-        if (!cancelled) {
-          landmarkerRef.current = faceLandmarker
+    initLandmarker()
+      .then((landmarker) => {
+        if (active) {
+          landmarkerRef.current = landmarker
           setState("ready")
         }
-      } catch (err) {
-        if (!cancelled) {
+      })
+      .catch((err) => {
+        if (active) {
           setError(
             err instanceof Error
               ? err.message
@@ -53,13 +80,10 @@ export const useFaceLandmarker = (
           )
           setState("error")
         }
-      }
-    }
+      })
 
-    init()
     return () => {
-      cancelled = true
-      landmarkerRef.current?.close()
+      active = false
     }
   }, [])
 
@@ -89,8 +113,11 @@ export const useFaceLandmarker = (
       }
       lastVideoTime = video.currentTime
 
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        drawingUtils = null
+      }
 
       const ctx = canvas.getContext("2d")
       if (!ctx) return
@@ -128,8 +155,8 @@ export const useFaceLandmarker = (
             drawLipBoundingBox(ctx, face, canvas.width, canvas.height)
           }
         }
-      } catch {
-        // Detection can fail transiently during delegate initialization
+      } catch (err) {
+        console.warn("detectForVideo failed:", err)
       }
 
       rafRef.current = requestAnimationFrame(detect)
