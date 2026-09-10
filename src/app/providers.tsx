@@ -11,6 +11,8 @@ export const PostHogProvider = ({ children }: { children: ReactNode }) => {
 
     posthog.init(key, {
       api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://eu.i.posthog.com",
+      // harmless on the direct host, required once POSTHOG_HOST is a proxy
+      ui_host: "https://eu.posthog.com",
       capture_pageview: true,
       capture_pageleave: true,
       autocapture: true,
