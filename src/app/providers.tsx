@@ -10,8 +10,9 @@ export const PostHogProvider = ({ children }: { children: ReactNode }) => {
     if (!key) return
 
     posthog.init(key, {
-      api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://eu.i.posthog.com",
-      // harmless on the direct host, required once POSTHOG_HOST is a proxy
+      api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://a.klokie.com",
+      // api_host is a reverse proxy, so the SDK needs to be told where the
+      // PostHog app itself lives or "view in PostHog" links point at ingest.
       ui_host: "https://eu.posthog.com",
       capture_pageview: true,
       capture_pageleave: true,
